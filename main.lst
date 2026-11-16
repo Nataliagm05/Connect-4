@@ -1,0 +1,1537 @@
+# file opened: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\main.asm
+  1   0000                      DEVICE ZXSPECTRUM48
+  2   0000              	SLDOPT COMMENT WPMEM, LOGPOINT, ASSERTION
+  3   0000                      org $8000               ; Program is located from memory address $8000 = 32768
+  4   8000
+  5   8000 F3           begin:          di              ; Disable Interrupts
+  6   8001 31 00 00                     ld sp,0         ; Set stack pointer to top of ram (RAMTOP)
+  7   8004
+  8   8004              ;-------------------------------------------------------------------------------------------------
+  9   8004              ; Before starting, the color of each player can be changed by changing colorplayer1
+ 10   8004              ; and colorplayer2 values in colors.asm
+ 11   8004              ; Also, this game can be played with other winning conditions (N-in a row) and board sizes.
+ 12   8004              ; This can be changed by modifying winsize, xsize and ysize values in game_variables.asm.
+ 13   8004              ; xoffset and y offset can be modified there too.
+ 14   8004
+ 15   8004              ; Board building algorithm, includes basic_gfx.asm
+ 16   8004 FD 21 5C 85          ld IY, GAMEVARS
+ 17   8008              mainloop:
+ 18   8008 CD 9D 80             call paint_board
+ 19   800B
+ 20   800B CD D3 85             call start_game
+ 21   800E
+ 22   800E
+ 23   800E              ;-------------------------------------------------------------------------------------------------
+ 24   800E 18 FE        endofcode:      jr endofcode    ; Infinite loop
+ 25   8010 00 00 00...  Board: defs xsize*ysize,0
+ 26   803A
+ 27   803A                      ; Visual includes:
+ 28   803A                      include "graphics_basic.asm"            ; Inludes basic graphics functions
+# file opened: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\graphics_basic.asm
+  1+  803A
+  2+  803A
+  3+  803A              dotXYC: ; takes two coordinates x and y and paints a
+  4+  803A                      ; dot on the atribute corresponding to those coordinates of color c.
+  5+  803A                      ; B = X, C = Y, A = Color.
+  6+  803A
+  7+  803A F5               push af     ; Saves af
+  8+  803B C5               push bc     ; saves bc
+  9+  803C D5               push de     ; saves de
+ 10+  803D E5               push hl     ; saves hl
+ 11+  803E
+ 12+  803E                  ; 1.- Calculate position in hl register: hl =  32*Y + X + $5800
+ 13+  803E
+ 14+  803E 69               ld l,c      ; L = Y, l is the least significant bit part of hl
+ 15+  803F 26 00            ld h, 0     ; now hl = Y
+ 16+  8041
+ 17+  8041                  ; It is more eficient to do a "unwound loop" (bucle desenrollado)
+ 18+  8041                  ; than to make a actual loop
+ 19+  8041 29               add hl,hl   ; hl_1 = hl + hl = 2*hl
+ 20+  8042 29               add hl,hl   ; hl_2 = 2hl + 2hl = 4hl
+ 21+  8043 29               add hl,hl   ; hl_3 = 4hl + 4hl = 8hl
+ 22+  8044 29               add hl,hl   ; hl_4 = 8hl + 8hl = 16hl
+ 23+  8045 29               add hl,hl   ; hl_5 = 16hl + 16hl = 32hl
+ 24+  8046
+ 25+  8046                  ; now hl = Y*32, so we need to add $5800 and X:
+ 26+  8046 11 00 58         ld de, $5800    ; de = $5800
+ 27+  8049 19               add hl, de      ; hl = 32*  Y + $5800
+ 28+  804A
+ 29+  804A 58               ld e, b         ; we only need one reg to make e = X (b=X)
+ 30+  804B 16 00            ld d, $00       ; we reset d reg to 00 so we dont add 58 (previous value)
+ 31+  804D 19               add hl, de      ; hl = 32*Y + $5800 + X
+ 32+  804E
+ 33+  804E                  ; now that we have the coordinates decoded, lets paint the dot:
+ 34+  804E                  ; For that first we need to move the value of the color to its
+ 35+  804E                  ; corresponding position:
+ 36+  804E
+ 37+  804E                  ; a = Color, so to get Color * 8 we do:
+ 38+  804E 87               add a           ; a_1 =  a  + a = 2a = Color *2
+ 39+  804F 87               add a           ; a_2 = 2a + 2a = 4a = Color *4
+ 40+  8050 87               add a           ; a_3 = 4a + 4a = 8a = Color *8
+ 41+  8051
+ 42+  8051                  ; Now we set the atribute of the register corresponding to the
+ 43+  8051                  ; given coordinates to the color after moving it left thrice so
+ 44+  8051                  ; as to get the intended result.
+ 45+  8051
+ 46+  8051 77               ld (hl),a
+ 47+  8052
+ 48+  8052                  ; Now that the function is finished we return all the registers
+ 49+  8052                  ; and flags unmodified.
+ 50+  8052 E1               pop hl
+ 51+  8053 D1               pop de
+ 52+  8054 C1               pop bc
+ 53+  8055 F1               pop af
+ 54+  8056
+ 55+  8056 C9               ret
+ 56+  8057
+ 57+  8057              line: ; line funciton will draw a horizantal line of color atributes.
+ 58+  8057              ; inputs:   B = X (x starting coordinate)
+ 59+  8057              ;           C = Y (y starting coordinate)
+ 60+  8057              ;           A = Color
+ 61+  8057              ;           D = desired line lenght
+ 62+  8057                  ; We save the register values pushing them into the stack:
+ 63+  8057 F5               push af     ; saves af (a and flags)
+ 64+  8058 C5               push bc     ; saves bc
+ 65+  8059 E5               push hl     ; saves hl
+ 66+  805A D5               push de     ; saves de
+ 67+  805B              ; Now we strart a loop to draw "d" dots
+ 68+  805B              lineloop:
+ 69+  805B CD 3A 80         call dotXYC ; Draws the dot on (x=b,y=c) with color a
+ 70+  805E 04               inc b       ; Increments b to prepare move the x coordinate one step.
+ 71+  805F                  ; Conditional part to check if the loop should end:
+ 72+  805F 15               dec d       ; Decrements d
+ 73+  8060 20 F9            jr nz, lineloop ; if the zero flag has not been raised, then the loop
+ 74+  8062                                  ; makes another iteration. Meaning, it will iterate
+ 75+  8062                                  ; while d > 0.
+ 76+  8062                  ; Restore registers:
+ 77+  8062 D1               pop de
+ 78+  8063 E1               pop hl
+ 79+  8064 C1               pop bc
+ 80+  8065 F1               pop af
+ 81+  8066
+ 82+  8066 C9               ret
+ 83+  8067
+ 84+  8067              column: ; columns function will draw a vertical line of color atributes.
+ 85+  8067              ; inputs:   B = X (x starting coordinate)
+ 86+  8067              ;           C = Y (y starting coordinate)
+ 87+  8067              ;           A = Color
+ 88+  8067              ;           D = desired columns lenght
+ 89+  8067 F5               push af     ; saves af
+ 90+  8068 C5               push bc     ; saves bc
+ 91+  8069 D5               push de     ; saves de
+ 92+  806A E5               push hl     ; saves hl
+ 93+  806B
+ 94+  806B              ; Start the loop:
+ 95+  806B              columnloop:
+ 96+  806B CD 3A 80         call dotXYC ; draw dot on (x=b,y=c) color = c
+ 97+  806E
+ 98+  806E 0C               inc c       ; Increments c (y axis) to draw the next dot under the previous one
+ 99+  806F 15               dec d       ; decrements counter
+100+  8070 20 F9            jr nz, columnloop   ; Jumps back to columnloop as long as d>0
+101+  8072
+102+  8072                  ; restore registers
+103+  8072 E1               pop hl      ; restores hl
+104+  8073 D1               pop de      ; restores de
+105+  8074 C1               pop bc      ; restores bc
+106+  8075 F1               pop af      ; restores af
+107+  8076
+108+  8076 C9               ret
+109+  8077
+110+  8077              checker:
+111+  8077              ; INPUT:
+112+  8077              ; A is the color of the checker
+113+  8077              ; B is the column with wich we want the checker to align
+114+  8077 F5               push af
+115+  8078 C5               push bc
+116+  8079 D5               push de
+117+  807A E5               push hl
+118+  807B
+119+  807B 57               ld d, a
+120+  807C 78               ld a, b
+121+  807D CD 14 86         call getXFromColumn      ; Calculate X position
+122+  8080
+123+  8080 47               ld b, a
+124+  8081 7A               ld a, d
+125+  8082
+126+  8082 CD 3A 80         call dotXYC              ; Draw checker dots (square shape)
+127+  8085 04               inc b
+128+  8086 CD 3A 80         call dotXYC
+129+  8089 0C               inc c
+130+  808A CD 3A 80         call dotXYC
+131+  808D 05               dec b
+132+  808E CD 3A 80         call dotXYC
+133+  8091
+134+  8091 E1               pop hl
+135+  8092 D1               pop de
+136+  8093 C1               pop bc
+137+  8094 F1               pop af
+138+  8095 C9               ret
+139+  8096
+140+  8096              Delay: ; this delay is used for "can't drop" message.
+141+  8096 C5               push bc
+142+  8097 06 FF            ld b,255
+143+  8099              delay_loop:
+144+  8099 10 FE            djnz delay_loop
+145+  809B C1               pop bc
+146+  809C C9               ret
+# file closed: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\graphics_basic.asm
+ 29   809D                      include "graphics_core.asm"             ; Includes specific graphic functions for the game
+# file opened: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\graphics_core.asm
+  1+  809D              paint_board:
+  2+  809D F5                   push af
+  3+  809E C5                   push bc
+  4+  809F D5                   push de
+  5+  80A0 E5                   push hl
+  6+  80A1
+  7+  80A1              ;Paint border
+  8+  80A1 3E 09                ld a, border_color
+  9+  80A3 D3 FE                out($FE), a     ; Sets border color to constant color
+ 10+  80A5
+ 11+  80A5              ;Paint columns
+ 12+  80A5              initVARcolumn:
+ 13+  80A5 06 01                ld b, xoffset   ; saves xoffset in b
+ 14+  80A7 0E 04                ld c, yoffset   ; saves yoffset in c
+ 15+  80A9 3E 09                ld a, board_color     ; saves color in a
+ 16+  80AB 16 13                ld d, ysize * 3 + 1     ; multiplies ysize by three and then adds one in order to get the
+ 17+  80AD                                              ; number of vertical dots the board will measure
+ 18+  80AD
+ 19+  80AD              initLoopVarscolumn:
+ 20+  80AD 26 08                ld h, xsize + 1   ; H will serve as a counter for the number of columns we shall draw
+ 21+  80AF
+ 22+  80AF              forLoopcolumn:
+ 23+  80AF CD 67 80             call column     ; Draws a d lenght column from (b,c) using the column function
+ 24+  80B2
+ 25+  80B2 5F                   ld e, A         ; Temporarily saves a on e because we will need a to perform an addition
+ 26+  80B3 78                   ld a, B         ; Loads b into a
+ 27+  80B4 C6 03                add 3           ; Adds 3 to get to the next columns coordinates. Note that we add 3 because
+ 28+  80B6                                      ; our grid is designed to have two by two spaces so we have to jump not to
+ 29+  80B6                                      ; the next dot, but two ahead of it
+ 30+  80B6
+ 31+  80B6 47                   ld b,A          ; Updates b to the new coordinate for the next column
+ 32+  80B7 7B                   ld a, e         ; Restores a (the color) from where we stored it
+ 33+  80B8
+ 34+  80B8 25                   dec h                   ; Decreases the counter of columns since we finished painting it and
+ 35+  80B9                                              ; setting next's columns variables
+ 36+  80B9 20 F4                jr nz, forLoopcolumn    ; Jumps back to the start of this loop until our counter (h) triggers
+ 37+  80BB                                              ; the z flag
+ 38+  80BB
+ 39+  80BB              ; Paint (horizontal) lines
+ 40+  80BB
+ 41+  80BB              ; Set a, b, c and d to corresponding values
+ 42+  80BB              initVARline:
+ 43+  80BB 06 01                ld b, xoffset   ; saves xoffset in b
+ 44+  80BD                      ; ld c, yoffset would not be necessary
+ 45+  80BD                      ; ld a, color would not be necessary
+ 46+  80BD 16 16                ld d, xsize * 3 + 1     ; Sets d to the length of the horizontal lines required
+ 47+  80BF
+ 48+  80BF              initLoopVarsline:
+ 49+  80BF 26 07                ld h, ysize+1           ; H will serve as a counter for the munber of rows we need
+ 50+  80C1
+ 51+  80C1              forLoopline:
+ 52+  80C1 CD 57 80             call line               ; Calls line to draw a line lenght d from (b,c) using line function
+ 53+  80C4
+ 54+  80C4 5F                   ld e, A                 ; Uses e as a temporary storage for a
+ 55+  80C5 79                   ld a, c                 ; Loads c into a to add to it
+ 56+  80C6 C6 03                add 3                   ; Adds three, so now: a = c+3
+ 57+  80C8 4F                   ld c,A                  ; Updates c to c + 3
+ 58+  80C9 7B                   ld a, e                 ; Restores a
+ 59+  80CA
+ 60+  80CA 25                   dec h                   ; Decrement line counter
+ 61+  80CB 20 F4                jr nz, forLoopline      ; Jumps back to the start of this loop until zf is triggered
+ 62+  80CD
+ 63+  80CD E1                   pop hl
+ 64+  80CE D1                   pop de
+ 65+  80CF C1                   pop bc
+ 66+  80D0 F1                   pop af
+ 67+  80D1
+ 68+  80D1 C9                   ret
+ 69+  80D2
+ 70+  80D2              DrawAllGridCheckers:
+ 71+  80D2 F5               push af
+ 72+  80D3 C5               push bc
+ 73+  80D4 D5               push de
+ 74+  80D5 E5               push hl
+ 75+  80D6
+ 76+  80D6 1E 00            ld e, 0                         ; Start at row 0
+ 77+  80D8
+ 78+  80D8              draw_row_loop:
+ 79+  80D8 16 00            ld d, 0                         ; start at column 0
+ 80+  80DA
+ 81+  80DA              draw_col_loop:
+ 82+  80DA
+ 83+  80DA CD F5 80         call SlotFromBoard              ; Get checker info from board position (D, E)
+ 84+  80DD
+ 85+  80DD                  ; Only draw if slot is not empty (color != 0)
+ 86+  80DD FE 00            cp 0
+ 87+  80DF 28 03            jr z, skip_draw_checker
+ 88+  80E1
+ 89+  80E1                  ; Draw the checker
+ 90+  80E1 CD 77 80         call checker                    ; Uses B, C, A from SlotFromBoard
+ 91+  80E4
+ 92+  80E4              skip_draw_checker:
+ 93+  80E4                  ; Move to next column
+ 94+  80E4 14               inc d
+ 95+  80E5 7A               ld a, d
+ 96+  80E6 FE 07            cp xsize                        ; Check if we've done all columns
+ 97+  80E8 20 F0            jr nz, draw_col_loop
+ 98+  80EA
+ 99+  80EA 1C               inc e                           ; Move to the next row
+100+  80EB 7B               ld a, e
+101+  80EC FE 06            cp ysize                        ; Check if we've done all rows
+102+  80EE 20 E8            jr nz, draw_row_loop
+103+  80F0
+104+  80F0 E1               pop hl
+105+  80F1 D1               pop de
+106+  80F2 C1               pop bc
+107+  80F3 F1               pop af
+108+  80F4 C9               ret
+109+  80F5
+110+  80F5              SlotFromBoard:
+111+  80F5 E5               push hl
+112+  80F6 D5               push de
+113+  80F7
+114+  80F7 CD 36 86         call SlotPointer            ; HL points to Board[Y][X], x and y given in D and E
+115+  80FA 7E               ld a, (hl)                  ; A = board value (0, 1, or 2)
+116+  80FB
+117+  80FB
+118+  80FB 21 0F 81         ld hl, ColorList            ;hl = first value in ColorList, hl= 0
+119+  80FE 16 00            ld d, 0
+120+  8100 5F               ld e, a                     ; store in e the value of the board, this will be the color of the ckecker or black
+121+  8101 19               add hl, de                  ; HL = ColorList + value
+122+  8102 7E               ld a, (hl)                  ; A = actual color
+123+  8103
+124+  8103 D1               pop de                      ; Restore D=X, E=Y
+125+  8104 F5               push af                     ; Save color
+126+  8105
+127+  8105 7A               ld a, d                     ; A = column
+128+  8106 47               ld b, a                     ; B = screen X
+129+  8107
+130+  8107 7B               ld a, e                     ; A = row
+131+  8108 CD 25 86         call getYFromRow            ; return in A the screen value of Y
+132+  810B 4F               ld c, a                     ; C = screen Y
+133+  810C
+134+  810C F1               pop af
+135+  810D E1               pop hl
+136+  810E C9               ret
+137+  810F
+# file closed: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\graphics_core.asm
+ 30   810F                      include "colors.asm"                    ; Includes constants that determine all the colors on screen
+# file opened: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\colors.asm
+  1+  810F              board_color: EQU 9
+  2+  810F              border_color: EQU 9          ; Color of the board and border
+  3+  810F
+  4+  810F              colorplayer1: EQU 2     ; player1 is red
+  5+  810F              colorplayer2: EQU 6     ; player2 is yellow
+  6+  810F
+  7+  810F              ColorList:
+  8+  810F 00               DB 0                        ; Index 0 = empty (background, black)
+  9+  8110 02               DB colorplayer1             ; Index 1 = player 1 (red)
+ 10+  8111 06               DB colorplayer2             ; Index 2 = player 2 (yellow)
+# file closed: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\colors.asm
+ 31   8112                      include "TextDemo.asm"
+# file opened: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\TextDemo.asm
+  1+  8112              NoDropAdvise:
+  2+  8112 F5                   push af
+  3+  8113 C5                   push bc
+  4+  8114 DD E5                push ix
+  5+  8116                              ; FIRST EXAMPLE - Print a text
+  6+  8116                              ;--------------------------------------------------
+  7+  8116 06 00                        ld b, 0        ; Row in register B
+  8+  8118 0E 00                        ld c, 0         ; Column in register C
+  9+  811A 3E 4D                        ld a, %01001101 ; Color in register A (Full 8-bit attributes: Flash, Brightness, Paper(3), Ink (3))
+ 10+  811C DD 21 E4 84                  ld ix, myText   ; Text, ending with 0, pointed to by IX
+ 11+  8120 CD 3D 81                     call PRINTAT    ; Function to print text
+ 12+  8123 DD 21 05 85                  ld ix, eraseText
+ 13+  8127 3E 00                        ld a, %00000000
+ 14+  8129 06 FF                        ld b,255
+ 15+  812B              DelayLoop:
+ 16+  812B CD 96 80                     call Delay
+ 17+  812E CD 96 80                     call Delay
+ 18+  8131 10 F8                        djnz DelayLoop
+ 19+  8133 06 00                        ld b, 0
+ 20+  8135 CD 3D 81                     call PRINTAT
+ 21+  8138 DD E1                pop ix
+ 22+  813A C1                   pop bc
+ 23+  813B F1                   pop af
+ 24+  813C
+ 25+  813C C9                   ret         ; end of program infinite loop
+ 26+  813D
+ 27+  813D                  include "text.asm"         ; Library for text printing
+# file opened: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\text.asm
+  1++ 813D              ; -------------------------------
+  2++ 813D              ; ZX Spectrum Text print library
+  3++ 813D              ; Daniel León - AOC - UFV 2020
+  4++ 813D              ; -------------------------------
+  5++ 813D
+  6++ 813D
+  7++ 813D              ; ----------------------------------------------------------------------------------------
+  8++ 813D              ; PRINTAT - Print a string in a position and attributes as per registers:
+  9++ 813D              ;		IN	A	: Bit 7=1 For Flash / Bit 6=1 For Brigh / Bit 5,4,3 for Paper / Bit 2,1,0 for Ink
+ 10++ 813D              ;		IN	B	: Row 0..23
+ 11++ 813D              ;		IN	C	: Column 0..31
+ 12++ 813D              ;		IN	IX	: Address of text (Text must end in a 0)
+ 13++ 813D              ; ----------------------------------------------------------------------------------------
+ 14++ 813D CD 4C 81     PRINTAT:	CALL PREP_PRT				; Update Attribute var &Screen & Attributes pointers
+ 15++ 8140              ; ----------------------------------------------------------------------------------------
+ 16++ 8140              ;		VVV Do not move PRINTSTR below as PRINTAT continues into PRINTSTR routine
+ 17++ 8140              ; ----------------------------------------------------------------------------------------
+ 18++ 8140              ; PRINTSTR - Prints String - IX Points to the String start
+ 19++ 8140              ; ----------------------------------------------------------------------------------------
+ 20++ 8140 DD 7E 00     PRINTSTR:   LD A,(IX)					; A Contains first char to print
+ 21++ 8143 B7           			OR A						; check for end of string (0)
+ 22++ 8144 C8           			RET Z						; Finish printing if 0
+ 23++ 8145 CD 8D 81     			CALL PRINTCHNUM
+ 24++ 8148 DD 23        			INC IX						; Move to next char in string
+ 25++ 814A 18 F4        			JR PRINTSTR					; Start over printing sequence
+ 26++ 814C              ; ----------------------------------------------------------------------------------------
+ 27++ 814C
+ 28++ 814C
+ 29++ 814C              ;-----------------------------------------------------------------------------------------
+ 30++ 814C              ; PREP_PRT - Updates Print_Attr, SCR & ATTR Vars
+ 31++ 814C              ;-----------------------------------------------------------------------------------------
+ 32++ 814C 32 D3 81     PREP_PRT:	LD (PRINT_ATTR),A			; Set Attribute
+ 33++ 814F CD 55 81     PREP_PRT_2:	CALL CRtoSCREEN
+ 34++ 8152 C3 67 81     			JP CRtoATTR
+ 35++ 8155              ;-----------------------------------------------------------------------------------------
+ 36++ 8155
+ 37++ 8155              ;-----------------------------------------------------------------------------------------
+ 38++ 8155              ; CRtoSCREEN - Converts a scr char coord into a SCREEN Address   b,c = y,x positions
+ 39++ 8155              ;	IN  - B=Row, C=Column
+ 40++ 8155              ;	OUT - HL=Address in screen also stored in (SCR_CUR_PTR)
+ 41++ 8155              ;	Conversion:
+ 42++ 8155              ;			Row FFfff   Column CCCCC
+ 43++ 8155              ;			HL=%010FF000 fffCCCCC
+ 44++ 8155              ;-----------------------------------------------------------------------------------------
+ 45++ 8155              CRtoSCREEN:
+ 46++ 8155 78           			LD A,B						; %___FFfff
+ 47++ 8156 F6 40        			OR #40						; %010FFfff
+ 48++ 8158 E6 F8        			AND #F8						; %010FF000
+ 49++ 815A 67           			LD H,A
+ 50++ 815B
+ 51++ 815B 78           			LD A,B						; %___FFfff
+ 52++ 815C E6 07        			AND #7						; %00000fff
+ 53++ 815E 0F           			RRCA						; %f00000ff
+ 54++ 815F 0F           			RRCA						; %ff00000f
+ 55++ 8160 0F           			RRCA						; %fff00000
+ 56++ 8161 B1           			OR C						; %fffCCCCC
+ 57++ 8162 6F           			LD L,A
+ 58++ 8163 22 CF 81                 LD (SCR_CUR_PTR),HL			; Update Variable
+ 59++ 8166 C9                       RET
+ 60++ 8167              ; ----------------------------------------------------------------------------------------
+ 61++ 8167
+ 62++ 8167
+ 63++ 8167
+ 64++ 8167              ;-----------------------------------------------------------------------------------------
+ 65++ 8167              ; CRtoATTR - Converts a screen char coord  into a ATTR Address  b,c = y,x positions
+ 66++ 8167              ;	IN  - B=Row, C=Column
+ 67++ 8167              ;	OUT - HL=Address in screen also stored in (SCR_ATTR_PTR)
+ 68++ 8167              ;	Conversion:
+ 69++ 8167              ;			Row FFfff   Column CCCCC
+ 70++ 8167              ;			HL=%010110FF fffCCCCC
+ 71++ 8167              ;-----------------------------------------------------------------------------------------
+ 72++ 8167              CRtoATTR:
+ 73++ 8167 78           			LD A,B						; %___FFfff
+ 74++ 8168 0F           			RRCA						; %f000FFff
+ 75++ 8169 0F           			RRCA						; %ff000FFf
+ 76++ 816A 0F           			RRCA						; %fff000FF
+ 77++ 816B 6F           			LD L,A
+ 78++ 816C E6 03        			AND 3						; %000000FF	value of FF can be only 00,01,10
+ 79++ 816E F6 58        			OR #58						; %010110FF value will be #58, #59 or #5A
+ 80++ 8170 67           			LD H,A
+ 81++ 8171
+ 82++ 8171 7D           			LD A,L						; %fff000FF
+ 83++ 8172 E6 E0        			AND #E0						; %fff00000
+ 84++ 8174 B1           			OR C						; %fffCCCCC
+ 85++ 8175 6F           			LD L,A
+ 86++ 8176
+ 87++ 8176 22 D1 81                 LD (SCR_ATTR_PTR),HL		; Update Variable
+ 88++ 8179 C9                       RET
+ 89++ 817A              ; ----------------------------------------------------------------------------------------
+ 90++ 817A
+ 91++ 817A              ; ----------------------------------------------------------------------------------------
+ 92++ 817A              ; PRINTCHNUMAT - Prints Char pointed by IX
+ 93++ 817A              ;-----------------------------------------------------------------------------------------
+ 94++ 817A              PRINTCHNUMAT:
+ 95++ 817A F5           			PUSH AF
+ 96++ 817B C5           			PUSH BC
+ 97++ 817C D5           			PUSH DE
+ 98++ 817D E5           			PUSH HL
+ 99++ 817E CD 4C 81     			CALL PREP_PRT
+100++ 8181 DD 7E 00     			LD A, (IX)
+101++ 8184 CD 8D 81     			CALL PRINTCHNUM
+102++ 8187 E1           			POP HL
+103++ 8188 D1           			POP DE
+104++ 8189 C1           			POP BC
+105++ 818A 0C           			INC C
+106++ 818B F1           			POP AF
+107++ 818C C9           			RET
+108++ 818D
+109++ 818D              ; ----------------------------------------------------------------------------------------
+110++ 818D              ; PRINTCHNUM - Prints Char Number N (stored in A)
+111++ 818D              ;-----------------------------------------------------------------------------------------
+112++ 818D              PRINTCHNUM:
+113++ 818D 26 00        			LD H,0						; Multiply value by 8 to get to right Char in Charset
+114++ 818F 6F           			LD L,A
+115++ 8190 29           			ADD HL,HL
+116++ 8191 29           			ADD HL,HL
+117++ 8192 29           			ADD HL,HL
+118++ 8193 11 D4 80     			LD DE, CHARSET-(8*32)		; Optimize in compile time (instead of sub 32)
+119++ 8196 19           			ADD HL,DE
+120++ 8197 EB           			EX  DE,HL					;Value in DE
+121++ 8198              			; Continues to printchar below
+122++ 8198              ; ----------------------------------------------------------------------------------------
+123++ 8198
+124++ 8198
+125++ 8198              ; ----------------------------------------------------------------------------------------
+126++ 8198              ; PRINTCHAR - Prints Char  (DE points to the char. Uses HL as last Cur Pointer)
+127++ 8198              ; ----------------------------------------------------------------------------------------
+128++ 8198              PRINTCHAR:
+129++ 8198 06 08        			LD B,8						; 8 Lines per char
+130++ 819A 2A CF 81                 LD HL, (SCR_CUR_PTR)		; Load Cursor Pointer y,x
+131++ 819D
+132++ 819D 1A           BYTEPCHAR:	LD A,(DE)					; Get Char to be printed, first line
+133++ 819E 77           			LD (HL),A					; Move to Printing location
+134++ 819F 24                       INC H						; inc H so next line in char (ZX Spectrum Screen RAM)
+135++ 81A0 13                       INC DE 						; next line to be printed
+136++ 81A1 10 FA                    DJNZ BYTEPCHAR				; Repeat 8 lines
+137++ 81A3 3A D3 81                 LD A,(PRINT_ATTR) 			; Load Attributes to print char with
+138++ 81A6 2A D1 81                 LD HL, (SCR_ATTR_PTR)
+139++ 81A9 77                       LD (HL),A
+140++ 81AA 21 D1 81                 LD HL, SCR_ATTR_PTR			; Get pointer to ATTR
+141++ 81AD 34                       INC (HL)					; Move Attribute cursor to next char
+142++ 81AE 21 CF 81     			LD HL, SCR_CUR_PTR
+143++ 81B1 34           			INC (HL)					; update Cursor pointer to next position
+144++ 81B2 C9                       RET
+145++ 81B3              ; ----------------------------------------------------------------------------------------
+146++ 81B3
+147++ 81B3
+148++ 81B3
+149++ 81B3              ; ----------------------------------------------------------------------------------------
+150++ 81B3              ; INK2PAPER - moves ink of attribute stored in (PRINT_ATTR) to paper and sets ink to 0
+151++ 81B3              ; 				Sets bright 1 and flash 0
+152++ 81B3              ; ----------------------------------------------------------------------------------------
+153++ 81B3 3A D3 81     INK2PAPER:	LD A, (PRINT_ATTR)		    ; Get storedAttribute
+154++ 81B6 E6 07                    AND 7						; get Attr INK in A
+155++ 81B8 07           			RLCA
+156++ 81B9 07           			RLCA
+157++ 81BA 07           			RLCA						; move Ink to Paper
+158++ 81BB F6 40        			OR 64						; ink 0 bright 1
+159++ 81BD 32 D3 81     			LD (PRINT_ATTR),A		    ; Get storedAttribute
+160++ 81C0 C9           			RET
+161++ 81C1              ; ----------------------------------------------------------------------------------------
+162++ 81C1
+163++ 81C1
+164++ 81C1
+165++ 81C1
+166++ 81C1 21 00 40     CLEARSCR:	LD HL,$4000					; Erases screen by writing 0 to all pixels and attributes
+167++ 81C4 11 01 40     			LD DE,$4001
+168++ 81C7 01 FF 1A     			LD BC,6911
+169++ 81CA 36 00        			LD (HL),0
+170++ 81CC ED B0        			LDIR
+171++ 81CE C9           			RET
+172++ 81CF
+173++ 81CF
+174++ 81CF              SCR_CUR_PTR
+174++ 81CF 00 00          	db $00, $00				; Cursor Pointer in Screen (2 bytes) (HL)
+175++ 81D1 00 00        SCR_ATTR_PTR: 	db $00, $00				; Attr Pointer in Screen (2 bytes) (HL)
+176++ 81D3 00           PRINT_ATTR:		db $00					; Attribute used by printchar routine (1 byte)
+177++ 81D4
+178++ 81D4              CHARSET: incbin "charset.bin"			; Charset used
+179++ 84D4
+# file closed: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\text.asm
+ 28+  84D4                                             ; Including the pixelwise definition for all characters (96 ASCII chars, from 32 (space) onwards)
+ 29+  84D4                                             ; Right after this include, you may add custom chars as per the two shown below.
+ 30+  84D4                                             ; Use the attached excel file to define these bytes easily
+ 31+  84D4 FF 01 01 81  brick:          defb $FF, $01, $01, $81, $FF, $10, $10, $18; Brick pixel definition, defined as the next char: char 128
+ 31+  84D8 FF 10 10 18
+ 32+  84DC 3C 42 A5 81  smiley:         defb $3C, $42, $A5, $81, $99, $A5, $42, $3C; Smiley pixel definition, defined as the next char: char 129
+ 32+  84E0 99 A5 42 3C
+ 33+  84E4                              ; How to make a custom char: Shown, for readabilty sake, as a "." representing a 0, and a "@" representing a 1
+ 34+  84E4                              ; Smiley Example
+ 35+  84E4                              ; $3C --> 00111100  --> ..@@@@..
+ 36+  84E4                              ; $42 --> 01000010  --> .@....@.
+ 37+  84E4                              ; $A5 --> 10100101  --> @.@..@.@
+ 38+  84E4                              ; $81 --> 10000001  --> @......@
+ 39+  84E4                              ; $A5 --> 10100101  --> @.@..@.@
+ 40+  84E4                              ; $99 --> 10011001  --> @..@@..@
+ 41+  84E4                              ; $42 --> 01000010  --> .@....@.
+ 42+  84E4                              ; $3C --> 00111100  --> ..@@@@..
+ 43+  84E4
+ 44+  84E4
+ 45+  84E4 20 20 20 81  myText:         defm "   ", 129, " Can't Drop. Try Again. ",129,"   ",0
+ 45+  84E8 20 43 61 6E
+ 45+  84EC 27 74 20 44
+ 45+  84F0 72 6F 70 2E
+ 45+  84F4 20 54 72 79
+ 45+  84F8 20 41 67 61
+ 45+  84FC 69 6E 2E 20
+ 45+  8500 81 20 20 20
+ 45+  8504 00
+ 46+  8505 20 20 20 20  eraseText: defm "                                ",0
+ 46+  8509 20 20 20 20
+ 46+  850D 20 20 20 20
+ 46+  8511 20 20 20 20
+ 46+  8515 20 20 20 20
+ 46+  8519 20 20 20 20
+ 46+  851D 20 20 20 20
+ 46+  8521 20 20 20 20
+ 46+  8525 00
+ 47+  8526 20 50 6C 61  winplayer1: defm " Player 1 Wins ",0
+ 47+  852A 79 65 72 20
+ 47+  852E 31 20 57 69
+ 47+  8532 6E 73 20 00
+ 48+  8536 20 50 6C 61  winplayer2: defm " Player 2 Wins ",0
+ 48+  853A 79 65 72 20
+ 48+  853E 32 20 57 69
+ 48+  8542 6E 73 20 00
+ 49+  8546 20 46 75 6C  tie: defm " Full Board. Tie ",0
+ 49+  854A 6C 20 42 6F
+ 49+  854E 61 72 64 2E
+ 49+  8552 20 54 69 65
+ 49+  8556 20 00
+ 50+  8558
+ 51+  8558
+# file closed: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\TextDemo.asm
+ 32   8558
+ 33   8558
+ 34   8558                      ; Game mechanic includes:
+ 35   8558                      include "game_variables.asm"            ; Includes game variables for board size, offset, etc
+# file opened: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\game_variables.asm
+  1+  8558              xsize: EQU 7            ; number of columns for the board
+  2+  8558              ysize: EQU 6           ; Number of rows for the bord
+  3+  8558              xoffset: EQU 1          ; Distance from the left border
+  4+  8558              yoffset: EQU 4          ; Distance from the top border
+  5+  8558
+  6+  8558              winsize: EQU 4           ; number of connected checkers needed to win
+  7+  8558 00           win_player: DB 0
+  8+  8559 00           win_x: DB 0
+  9+  855A 00           win_y: DB 0
+ 10+  855B 00           line_count: DB 0
+ 11+  855C
+ 12+  855C
+ 13+  855C              p1_key_set: EQU $FDFE   ; Player 1 key set and its bits of each key
+ 14+  855C              p1_left_bit: EQU 0
+ 15+  855C              p1_drop_bit: EQU 1
+ 16+  855C              p1_right_bit: EQU 2
+ 17+  855C
+ 18+  855C              p2_key_set: EQU $DFFE   ; Player 2 key set and its bits of each key
+ 19+  855C              p2_left_bit: EQU 2
+ 20+  855C              p2_drop_bit: EQU 1
+ 21+  855C              p2_right_bit: EQU 0
+ 22+  855C
+ 23+  855C              GAMEVARS:               ; Other variables
+ 24+  855C 01           CurrentPlayer: DB 1
+ 25+  855D 01           CurrentXSlot: DB 1
+ 26+  855E 05           TargetY: DB ysize-1
+# file closed: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\game_variables.asm
+ 36   855F                      include "keyboard.asm"               ; Includes the functions needed to read the keyboard input
+# file opened: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\keyboard.asm
+  1+  855F              ReadKey:
+  2+  855F              ; INPUT: D = player color
+  3+  855F              ;        E = player number
+  4+  855F              ; OUTPUT: A = -1 if left, 1 if right or 0 if dropped
+  5+  855F              ; checks whose turn it is based on the color stored in register D,
+  6+  855F              ; scans his keys, and waits for their release to return.
+  7+  855F              ; returns -1 if key pressed means left
+  8+  855F              ; returns  1 if key pressed means right
+  9+  855F              ; returns  0 if key pressed means drop
+ 10+  855F              ; all register except for the accumulator are returned the same
+ 11+  855F                  ; Check who is playing
+ 12+  855F C5               push bc
+ 13+  8560 7A               ld a, d                  ; this has to be updated again because we will loop around this label
+ 14+  8561 FE 02            cp colorplayer1          ; remembering a is currently the player's color
+ 15+  8563 CA 69 85         jp z, scan_p1_keys      ; If player 1 -> check A/S/D keys
+ 16+  8566 C3 80 85         jp scan_p2_keys        ; Else player 2 -> check I/O/P keys
+ 17+  8569
+ 18+  8569
+ 19+  8569              ;------------------------------------------------
+ 20+  8569              scan_p1_keys:
+ 21+  8569              ; Defines the keys to read
+ 22+  8569 01 FE FD         ld bc, p1_key_set
+ 23+  856C
+ 24+  856C              scan_p1_loop:
+ 25+  856C              ; Only scans keys and returns output depending on the keyboard input
+ 26+  856C
+ 27+  856C ED 78            in a, (c)
+ 28+  856E
+ 29+  856E CB 47            bit p1_left_bit, a                 ; Check key left
+ 30+  8570 CA 97 85         jp z, wr_p1_left
+ 31+  8573
+ 32+  8573 CB 4F            bit p1_drop_bit, a                 ; Check key drop
+ 33+  8575 CA A1 85         jp z, wr_p1_drop
+ 34+  8578
+ 35+  8578 CB 57            bit p1_right_bit, a                ; Check key right
+ 36+  857A CA AB 85         jp z, wr_p1_right
+ 37+  857D
+ 38+  857D C3 6C 85         jp scan_p1_loop                    ; No input, keep looping
+ 39+  8580
+ 40+  8580
+ 41+  8580              scan_p2_keys:
+ 42+  8580              ; Defines the keys to read
+ 43+  8580 01 FE DF         ld bc, p2_key_set
+ 44+  8583
+ 45+  8583              scan_p2_loop:
+ 46+  8583              ; Only scans keys and returns output depending on the keyboard input
+ 47+  8583
+ 48+  8583 ED 78            in a, (c)
+ 49+  8585
+ 50+  8585 CB 57            bit p2_left_bit, a                 ; Check key left
+ 51+  8587 CA B5 85         jp z, wr_p2_left
+ 52+  858A
+ 53+  858A CB 4F            bit p2_drop_bit, a                 ; Check key drop
+ 54+  858C CA BF 85         jp z, wr_p2_drop
+ 55+  858F
+ 56+  858F CB 47            bit p2_right_bit, a                ; Check key right
+ 57+  8591 CA C9 85         jp z, wr_p2_right
+ 58+  8594
+ 59+  8594 C3 83 85         jp scan_p2_loop                    ; No input, keep looping
+ 60+  8597
+ 61+  8597
+ 62+  8597
+ 63+  8597              ;-------------------------------------------- wait realease labels:
+ 64+  8597              wr_p1_left:
+ 65+  8597 ED 78            in a, (c)
+ 66+  8599 CB 47            bit p1_left_bit, a
+ 67+  859B 28 FA            jr z, wr_p1_left   ; Wait while A pressed
+ 68+  859D
+ 69+  859D 3E FF            ld a, -1
+ 70+  859F 18 30            jr end_scan
+ 71+  85A1
+ 72+  85A1              wr_p1_drop:
+ 73+  85A1 ED 78            in a, (c)
+ 74+  85A3 CB 4F            bit p1_drop_bit, a
+ 75+  85A5 28 FA            jr z, wr_p1_drop   ; Wait while A pressed
+ 76+  85A7
+ 77+  85A7 3E 00            ld a, 0
+ 78+  85A9 18 26            jr end_scan
+ 79+  85AB
+ 80+  85AB              wr_p1_right:
+ 81+  85AB ED 78            in a, (c)
+ 82+  85AD CB 57            bit p1_right_bit, a
+ 83+  85AF 28 FA            jr z, wr_p1_right   ; Wait while D pressed
+ 84+  85B1
+ 85+  85B1 3E 01            ld a, 1
+ 86+  85B3 18 1C            jr end_scan
+ 87+  85B5
+ 88+  85B5              wr_p2_left:
+ 89+  85B5 ED 78            in a, (c)
+ 90+  85B7 CB 57            bit p2_left_bit, a
+ 91+  85B9 28 FA            jr z, wr_p2_left   ; Wait while I pressed
+ 92+  85BB
+ 93+  85BB 3E FF            ld a, -1
+ 94+  85BD 18 12            jr end_scan
+ 95+  85BF
+ 96+  85BF              wr_p2_drop:
+ 97+  85BF ED 78            in a, (c)
+ 98+  85C1 CB 4F            bit p2_drop_bit, a
+ 99+  85C3 28 FA            jr z, wr_p2_drop   ; Wait while I pressed
+100+  85C5
+101+  85C5 3E 00            ld a, 0
+102+  85C7 18 08            jr end_scan
+103+  85C9
+104+  85C9              wr_p2_right:
+105+  85C9 ED 78            in a, (c)
+106+  85CB CB 47            bit p2_right_bit, a
+107+  85CD 28 FA            jr z, wr_p2_right   ; Wait while P pressed
+108+  85CF
+109+  85CF 3E 01            ld a, 1
+110+  85D1                  ;jr end_scan Not necessary because end_scan is right beneath
+111+  85D1
+112+  85D1              end_scan:
+113+  85D1 C1               pop bc
+114+  85D2 C9               ret
+115+  85D3              ;================================ End scan keys function ======
+# file closed: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\keyboard.asm
+ 37   85D3                      include "game_logic_flow.asm"           ; Includes the intruction or function flow
+# file opened: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\game_logic_flow.asm
+  1+  85D3              ; This file contains some of the game mechanics of a Connect Four game
+  2+  85D3
+  3+  85D3              start_game:
+  4+  85D3
+  5+  85D3              game_loop:
+  6+  85D3
+  7+  85D3                  ; ==Player 1's turn
+  8+  85D3              game_loop_player_1
+  9+  85D3 16 02            ld d, colorplayer1 ; Load player 1 color
+ 10+  85D5 1E 01            ld e, 1
+ 11+  85D7 CD E5 85         call turn_player ; Execute player 1 turn
+ 12+  85DA
+ 13+  85DA
+ 14+  85DA                  ; ==Player 2's turn
+ 15+  85DA              game_loop_player_2
+ 16+  85DA 16 06            ld d, colorplayer2 ; Load player 2 color
+ 17+  85DC 1E 02            ld e, 2
+ 18+  85DE CD E5 85         call turn_player ; Execute player 2 turn
+ 19+  85E1
+ 20+  85E1
+ 21+  85E1 C3 D3 85         jp game_loop ; Repeat forever (game loop)
+ 22+  85E4
+ 23+  85E4 C9               ret ; Return (never reached untill win conditions are set)
+ 24+  85E5
+ 25+  85E5
+ 26+  85E5
+ 27+  85E5
+ 28+  85E5
+ 29+  85E5              ; ============================ turn player function =======
+ 30+  85E5              turn_player:
+ 31+  85E5              ; Input:
+ 32+  85E5              ;   D = current player color
+ 33+  85E5              ; Loop vars:
+ 34+  85E5              ;   B = grid column
+ 35+  85E5
+ 36+  85E5                  ; ==Draw initial checker
+ 37+  85E5 7A               ld a, d ; load color into a
+ 38+  85E6 0E 01            ld c, yoffset-3 ; Base Y position
+ 39+  85E8 CD 1D 86         call getXcentered   ; Get center column into B, B = center column
+ 40+  85EB CD 77 80         call checker
+ 41+  85EE              input_loop:
+ 42+  85EE                  ; a is color ; b is grid coordinate ; d is color
+ 43+  85EE
+ 44+  85EE                  ; ==Wait for player input:
+ 45+  85EE CD 5F 85         call ReadKey ; will produce an output on acumulator
+ 46+  85F1                               ; output: -1 (move left), 0 (drop) or 1 (move right)
+ 47+  85F1 D5               push de
+ 48+  85F2 5F               ld e, a ; save the keyboard input in e because we need a to erase the old checker
+ 49+  85F3
+ 50+  85F3                  ; == Erase checker
+ 51+  85F3                  ; we would erase the cheker either way if its drop or move
+ 52+  85F3 3E 00            ld a,0
+ 53+  85F5 CD 77 80         call checker
+ 54+  85F8
+ 55+  85F8
+ 56+  85F8 7B               ld a, e ; return the keyboard input to a from e
+ 57+  85F9
+ 58+  85F9                  ; ==Check if it is drop, and if it is, calls function DropChecker,
+ 59+  85F9                  ; == if it's not, jump to check where the checker is moving.
+ 60+  85F9 FE 00            cp 0
+ 61+  85FB C2 03 86         jp nz, not_drop
+ 62+  85FE
+ 63+  85FE D1               pop de
+ 64+  85FF CD 6C 86         call DropChecker ; will drop the checker to the first empty space in
+ 65+  8602                                   ; the column, if it's full, a message appears.
+ 66+  8602 C9               ret
+ 67+  8603
+ 68+  8603              not_drop:
+ 69+  8603 D1               pop de
+ 70+  8604
+ 71+  8604                  ; ==Else: move checker protocol
+ 72+  8604
+ 73+  8604                  ; ==Calculate new position
+ 74+  8604 80               add B   ; A = -1 or +1 depending on the input, so A + B will be the column we moved to
+ 75+  8605
+ 76+  8605                  ; ==if exceeded borders --> we dont update
+ 77+  8605                  ; if new position is 0, we will not update position
+ 78+  8605 FE FF            cp $FF
+ 79+  8607 28 05            jr z, paint_new
+ 80+  8609
+ 81+  8609                  ; if  new position is too far to the right we will not update position
+ 82+  8609 FE 07            cp xsize
+ 83+  860B 28 01            jr z, paint_new
+ 84+  860D
+ 85+  860D                  ; else, position is valid --> update position
+ 86+  860D 47               ld b, a
+ 87+  860E
+ 88+  860E                  ; ==draw new checker
+ 89+  860E              paint_new:
+ 90+  860E              ; Input:
+ 91+  860E              ; d = color
+ 92+  860E              ; b = new grid position
+ 93+  860E 7A               ld a,d
+ 94+  860F CD 77 80         call checker
+ 95+  8612 18 DA            jr input_loop
+ 96+  8614
+ 97+  8614
+ 98+  8614
+ 99+  8614
+100+  8614              ; =============================
+101+  8614
+102+  8614              ; ============= Column position calculator ============
+103+  8614              getXFromColumn:
+104+  8614              ; INPUT:
+105+  8614              ;   A = column number
+106+  8614              ; OUTPUT:
+107+  8614              ;   A = x coordinates on the screen for the desired column
+108+  8614 C5               push bc
+109+  8615 47               ld b, a
+110+  8616 80               add b
+111+  8617 80               add b
+112+  8618 C6 01            add xoffset
+113+  861A 3C               inc a ; X coordinate = 3*column index + xoffset + 1
+114+  861B C1               pop bc
+115+  861C C9               ret
+116+  861D
+117+  861D              getXcentered:
+118+  861D              ; OUTPUT:
+119+  861D              ;   B = middle column number
+120+  861D F5               push af ; we save the value of the acumulator to use it for opaerations
+121+  861E
+122+  861E 3E 07            ld a, xsize ; Get total columns
+123+  8620 CB 2F            sra a ; Divide by 2 (center column)
+124+  8622 47               ld b,a ; b = a
+125+  8623
+126+  8623 F1               pop af ; we restore the acumulator's saved value
+127+  8624
+128+  8624 C9               ret
+129+  8625
+130+  8625              getYFromRow: ; A = y coordinates on the screen for the desired row
+131+  8625 C5               push bc
+132+  8626 47               ld b, a
+133+  8627 87               add a
+134+  8628 80               add b
+135+  8629 C6 04            add yoffset
+136+  862B 3C               inc a ; X coordinate = 3*row index + yoffset + 1
+137+  862C C1               pop bc
+138+  862D C9               ret
+139+  862E
+140+  862E              Mul8bit:
+141+  862E D5               push de
+142+  862F AF               xor a  ; a = 0
+143+  8630
+144+  8630              MulLoop:
+145+  8630 83               add e ; A = A+E
+146+  8631 15               dec d
+147+  8632 20 FC            jr nz, MulLoop ; repeat D times until D=0
+148+  8634
+149+  8634 D1               pop de
+150+  8635
+151+  8635 C9               ret
+152+  8636
+153+  8636              SlotPointer:
+154+  8636 F5               push af
+155+  8637 C5               push bc
+156+  8638 D5               push de
+157+  8639
+158+  8639 16 07            ld d, xsize ; D = XSize
+159+  863B CD 2E 86         call Mul8bit ; A = Y * XSize
+160+  863E
+161+  863E D1               pop de ; Restore X, Y
+162+  863F 82               add a, d ; A = (Y * XSize) + X
+163+  8640 D5               push de
+164+  8641
+165+  8641 21 10 80         ld hl, Board ; add to the board memory location A, to find [x][y] value
+166+  8644 16 00            ld d, 0
+167+  8646 5F               ld e, a
+168+  8647 19               add hl, de
+169+  8648
+170+  8648 D1               pop de
+171+  8649 C1               pop bc
+172+  864A F1               pop af
+173+  864B C9               ret
+174+  864C
+175+  864C
+176+  864C              FindTargetY:
+177+  864C              ; INPUT:
+178+  864C              ;   B = column index
+179+  864C              ; OUTPUT:
+180+  864C              ;   (IY+2) = y row where checker can drop. -1 if column is full.
+181+  864C D5                   push de
+182+  864D E5                   push hl
+183+  864E C5                   push bc
+184+  864F
+185+  864F 50                   ld d, b
+186+  8650 1E 05                ld e, ysize-1 ; start from bottom.
+187+  8652              CheckSlot:
+188+  8652 CD 36 86             call SlotPointer
+189+  8655 7E                   ld a, (hl) ; read slot from Board, if 0, target found
+190+  8656 FE 00                cp 0
+191+  8658 28 0B                jr z, EndLoopFull
+192+  865A 1D                   dec e
+193+  865B F2 52 86             jp p, CheckSlot
+194+  865E 3E FF                ld a, -1 ; if column full a = -1
+195+  8660 FD 77 02             ld (IY+2),a
+196+  8663 18 03                jr EndCheckTargetY
+197+  8665
+198+  8665              EndLoopFull:
+199+  8665 FD 73 02             ld (IY+2), e ; position of the empty slot in the column
+200+  8668
+201+  8668              EndCheckTargetY:
+202+  8668 C1                   pop bc
+203+  8669 E1                   pop hl
+204+  866A D1                   pop de
+205+  866B C9                   ret
+206+  866C
+207+  866C              DropChecker:
+208+  866C F5               push af
+209+  866D C5               push bc
+210+  866E E5               push hl
+211+  866F D5               push de
+212+  8670
+213+  8670
+214+  8670 4A                   ld c, d ; save player color
+215+  8671 50                   ld d, b ; D = column
+216+  8672 CD 4C 86             call FindTargetY ; find empty slot in the column
+217+  8675 E5                   push hl
+218+  8676 D5                   push de
+219+  8677 FD 5E 02             ld e, (IY+2) ; E = targetY
+220+  867A 7B                   ld a,E
+221+  867B FE FF                cp -1 ; if targetY = -1, drop can't happen
+222+  867D D1                   pop de
+223+  867E 28 47                jr z, NoDrop
+224+  8680 42                   ld b, D ; otherwise, obtains y coordinates to drop the checker
+225+  8681 CD 25 86             call getYFromRow
+226+  8684
+227+  8684 4F                   ld c,A ; C = y coordinates
+228+  8685 7B                   ld a, e ; A = CurrentPlayer (1 o 2)
+229+  8686 21 0F 81             ld hl, ColorList
+230+  8689 D5                   push de
+231+  868A 16 00                ld d, 0
+232+  868C 5F                   ld e, a ; DE = player number
+233+  868D 19                   add hl, de ; HL  ColorList[player]
+234+  868E 7E                   ld a, (hl) ; A = real color
+235+  868F D1                   pop de
+236+  8690 C5                   push bc
+237+  8691 CD 77 80             call checker ; paint new checker
+238+  8694 C1                   pop bc
+239+  8695
+240+  8695 7B                   ld a, e
+241+  8696
+242+  8696 E1                   pop hl
+243+  8697 FD 5E 02             ld e, (IY+2)
+244+  869A CD 36 86             call SlotPointer ; point where the drop has happened
+245+  869D
+246+  869D 77                   ld (hl),a ; puts the number of the current player on Board
+247+  869E 47                   ld b, a
+248+  869F CD CC 88             call checkWin
+249+  86A2 FE 01                cp 1
+250+  86A4 28 09                jr z, PlayerWins
+251+  86A6 CD 24 87             call CheckFullBoard
+252+  86A9 FE 01                cp 1
+253+  86AB 28 15                jr z, Tie
+254+  86AD 18 24                jr EndLoopDrop
+255+  86AF
+256+  86AF              PlayerWins:
+257+  86AF 78               ld a, B
+258+  86B0 FE 01            cp 1
+259+  86B2 CA B8 86         jp z, Player1Wins
+260+  86B5 C3 BD 86         jp Player2Wins
+261+  86B8
+262+  86B8              Player1Wins:
+263+  86B8 CD D8 86         call WinPlayer1
+264+  86BB 18 59            jr FinalScreen
+265+  86BD              Player2Wins:
+266+  86BD CD EE 86         call WinPlayer2
+267+  86C0 18 54            jr FinalScreen
+268+  86C2              Tie:
+269+  86C2 CD 04 87         call TieEnd
+270+  86C5 18 4F            jr FinalScreen
+271+  86C7
+272+  86C7              NoDrop:
+273+  86C7 79                   ld a,c ; check what player is playing
+274+  86C8 FE 02                cp colorplayer1
+275+  86CA CD 12 81             call NoDropAdvise ; show the "can't drop" message
+276+  86CD CA D3 85             jp z, game_loop_player_1 ; if player 1 was unable to drop, it plays again.
+277+  86D0 C3 DA 85             jp game_loop_player_2 ; same for player 2
+278+  86D3
+279+  86D3
+280+  86D3
+281+  86D3              EndLoopDrop:
+282+  86D3 D1               pop de
+283+  86D4 E1               pop hl
+284+  86D5 C1               pop bc
+285+  86D6 F1               pop af
+286+  86D7 C9                   ret
+287+  86D8
+288+  86D8              WinPlayer1:
+289+  86D8 3E 02            ld a, colorplayer1
+290+  86DA D3 FE            out($FE), a     ; Sets border color to constant color
+291+  86DC DD E5            push ix
+292+  86DE C5               push bc
+293+  86DF DD 21 26 85      ld ix, winplayer1
+294+  86E3 06 01            ld b, 1
+295+  86E5 0E 07            ld c, 7
+296+  86E7 CD 3D 81         call PRINTAT
+297+  86EA C1               pop bc
+298+  86EB DD E1            pop ix
+299+  86ED C9               ret
+300+  86EE              WinPlayer2:
+301+  86EE 3E 06            ld a, colorplayer2
+302+  86F0 D3 FE            out($FE), a     ; Sets border color to constant color
+303+  86F2 DD E5            push ix
+304+  86F4 C5               push bc
+305+  86F5 DD 21 36 85      ld ix, winplayer2
+306+  86F9 06 01            ld b, 1
+307+  86FB 0E 07            ld c, 7
+308+  86FD CD 3D 81         call PRINTAT
+309+  8700 C1               pop bc
+310+  8701 DD E1            pop ix
+311+  8703 C9               ret
+312+  8704              TieEnd:
+313+  8704 DD E5            push ix
+314+  8706 C5               push bc
+315+  8707 DD 21 46 85      ld ix, tie
+316+  870B 06 01            ld b, 1
+317+  870D 0E 07            ld c, 7
+318+  870F CD 3D 81         call PRINTAT
+319+  8712 C1               pop bc
+320+  8713 DD E1            pop ix
+321+  8715 C9               ret
+322+  8716
+323+  8716 18 FE        FinalScreen: jr FinalScreen
+# file closed: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\game_logic_flow.asm
+ 38   8718                      include "logic_checks.asm"       ; Includes the checker handling logic.
+# file opened: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\logic_checks.asm
+  1+  8718              ; Temp variables
+  2+  8718 00           temp_player: DB 0
+  3+  8719 00           temp_col: DB 0
+  4+  871A 00           temp_row: DB 0
+  5+  871B 00           temp_dx: DB 0
+  6+  871C 00           temp_dy: DB 0
+  7+  871D 00           temp_sd1n: DB 0
+  8+  871E 00           temp_sd2n: DB 0
+  9+  871F 00           keeps_iterating: DB 0
+ 10+  8720 00           sd1n: DB 0
+ 11+  8721 00           sd2n: DB 0
+ 12+  8722 00           save_x: DB 0
+ 13+  8723 00           save_y: DB 0
+ 14+  8724
+ 15+  8724
+ 16+  8724              ; ============================================
+ 17+  8724
+ 18+  8724              ; CheckFullBoard:
+ 19+  8724              ; Output: a = 1 if board is full, else 0
+ 20+  8724              CheckFullBoard:
+ 21+  8724                  ; save regs
+ 22+  8724 D5               push de
+ 23+  8725 E5               push hl
+ 24+  8726 C5               push bc
+ 25+  8727
+ 26+  8727 16 00            ld d, 0 ; counter
+ 27+  8729 1E 00            ld e, 0
+ 28+  872B              CheckSlotFull:
+ 29+  872B CD 36 86         call SlotPointer
+ 30+  872E 7E               ld a, (hl)      ; load slot value
+ 31+  872F FE 00            cp 0
+ 32+  8731 CA 40 87         jp z, EndLoopNotFullBoard   ; if empty slot is found then board is not full
+ 33+  8734
+ 34+  8734 14               inc d           ; move one slot
+ 35+  8735 7A               ld a, d
+ 36+  8736 FE 07            cp xsize        ; if all slots are full then board is full
+ 37+  8738 C2 2B 87         jp nz, CheckSlotFull
+ 38+  873B 3E 01            ld a, 1         ; FULL
+ 39+  873D C3 42 87         jp EndCheck
+ 40+  8740
+ 41+  8740              EndLoopNotFullBoard:
+ 42+  8740 3E 00            ld a, 0         ; NOT FULL
+ 43+  8742
+ 44+  8742              EndCheck:
+ 45+  8742 C1               pop bc
+ 46+  8743 E1               pop hl
+ 47+  8744 D1               pop de
+ 48+  8745 C9               ret
+ 49+  8746
+ 50+  8746
+ 51+  8746              ; ============================================
+ 52+  8746
+ 53+  8746              ; checkHorizontal
+ 54+  8746              ; Output: 1 if horizontal win exists, else 0
+ 55+  8746              checkHorizontal:
+ 56+  8746 C5               push bc
+ 57+  8747 D5               push de
+ 58+  8748 E5               push hl
+ 59+  8749
+ 60+  8749                  ; store parameters
+ 61+  8749 32 18 87         ld (temp_player), a
+ 62+  874C 7A               ld a, d
+ 63+  874D 32 19 87         ld (temp_col), a
+ 64+  8750 7B               ld a, e
+ 65+  8751 32 1A 87         ld (temp_row), a
+ 66+  8754
+ 67+  8754 06 01            ld b, 1                 ; count = 1
+ 68+  8756
+ 69+  8756                  ; Counting to the left
+ 70+  8756 3A 19 87         ld a, (temp_col)
+ 71+  8759 3D               dec a
+ 72+  875A 4F               ld c, a
+ 73+  875B
+ 74+  875B              count_left:
+ 75+  875B 79               ld a, c
+ 76+  875C FE 00            cp 0
+ 77+  875E FA 74 87         jp m, count_right_start ; stop if column < 0
+ 78+  8761
+ 79+  8761 51               ld d, c
+ 80+  8762 3A 1A 87         ld a, (temp_row)
+ 81+  8765 5F               ld e, a
+ 82+  8766 CD 36 86         call SlotPointer
+ 83+  8769
+ 84+  8769 7E               ld a, (hl)
+ 85+  876A 21 18 87         ld hl, temp_player
+ 86+  876D BE               cp (hl)                     ; if checkers different color:
+ 87+  876E 20 04            jr nz, count_right_start    ; jump to count_right_start
+ 88+  8770                                              ; else:
+ 89+  8770 04               inc b                       ; inc counter
+ 90+  8771 0D               dec c
+ 91+  8772 18 E7            jr count_left
+ 92+  8774
+ 93+  8774              count_right_start:
+ 94+  8774 3A 19 87         ld a, (temp_col)
+ 95+  8777 3C               inc a
+ 96+  8778 4F               ld c, a
+ 97+  8779              ;---------
+ 98+  8779              count_right:
+ 99+  8779 79               ld a, c
+100+  877A FE 07            cp xsize
+101+  877C 30 13            jr nc, check_horizontal_result  ; Stop if out of boundery
+102+  877E
+103+  877E 51               ld d, c
+104+  877F 3A 1A 87         ld a, (temp_row)
+105+  8782 5F               ld e, a
+106+  8783 CD 36 86         call SlotPointer
+107+  8786
+108+  8786 7E               ld a, (hl)
+109+  8787 21 18 87         ld hl, temp_player
+110+  878A BE               cp (hl)
+111+  878B 20 04            jr nz, check_horizontal_result
+112+  878D
+113+  878D 04               inc b
+114+  878E 0C               inc c
+115+  878F 18 E8            jr count_right
+116+  8791
+117+  8791              check_horizontal_result:
+118+  8791 78               ld a, b
+119+  8792 FE 04            cp winsize                  ; enough checkers in a row?
+120+  8794 30 03            jr nc, has_horizontal_win
+121+  8796 AF               xor a                       ; no win
+122+  8797 18 02            jr horizontal_exit
+123+  8799
+124+  8799              has_horizontal_win:
+125+  8799 3E 01            ld a, 1                     ; Win
+126+  879B
+127+  879B              horizontal_exit:
+128+  879B E1               pop hl
+129+  879C D1               pop de
+130+  879D C1               pop bc
+131+  879E C9               ret
+132+  879F
+133+  879F
+134+  879F              ; ============================================
+135+  879F              ; checkVertical
+136+  879F              ; Output: 1 if there is a vertical win, else 0
+137+  879F              checkVertical:
+138+  879F C5               push bc
+139+  87A0 D5               push de
+140+  87A1 E5               push hl
+141+  87A2
+142+  87A2                  ; store parameters
+143+  87A2 32 18 87         ld (temp_player), a
+144+  87A5 7A               ld a, d
+145+  87A6 32 19 87         ld (temp_col), a
+146+  87A9 7B               ld a, e
+147+  87AA 32 1A 87         ld (temp_row), a
+148+  87AD
+149+  87AD 06 01            ld b, 1                 ; count = 1
+150+  87AF
+151+  87AF                  ; Count upwards
+152+  87AF 3A 1A 87         ld a, (temp_row)
+153+  87B2 3D               dec a
+154+  87B3 4F               ld c, a
+155+  87B4
+156+  87B4              count_up:
+157+  87B4 79               ld a, c
+158+  87B5 FE 00            cp 0
+159+  87B7 FA CD 87         jp m, count_down_start
+160+  87BA
+161+  87BA 3A 19 87         ld a, (temp_col)
+162+  87BD 57               ld d, a
+163+  87BE 59               ld e, c
+164+  87BF CD 36 86         call SlotPointer
+165+  87C2
+166+  87C2 7E               ld a, (hl)
+167+  87C3 21 18 87         ld hl, temp_player
+168+  87C6 BE               cp (hl)
+169+  87C7 20 04            jr nz, count_down_start
+170+  87C9
+171+  87C9 04               inc b
+172+  87CA 0D               dec c
+173+  87CB 18 E7            jr count_up
+174+  87CD
+175+  87CD              ;--------
+176+  87CD              count_down_start:
+177+  87CD 3A 1A 87         ld a, (temp_row)
+178+  87D0 3C               inc a
+179+  87D1 4F               ld c, a
+180+  87D2
+181+  87D2              count_down:
+182+  87D2 79               ld a, c
+183+  87D3 FE 06            cp ysize
+184+  87D5 30 13            jr nc, check_vertical_result
+185+  87D7
+186+  87D7 3A 19 87         ld a, (temp_col)
+187+  87DA 57               ld d, a
+188+  87DB 59               ld e, c
+189+  87DC CD 36 86         call SlotPointer
+190+  87DF
+191+  87DF 7E               ld a, (hl)
+192+  87E0 21 18 87         ld hl, temp_player
+193+  87E3 BE               cp (hl)
+194+  87E4 20 04            jr nz, check_vertical_result
+195+  87E6
+196+  87E6 04               inc b
+197+  87E7 0C               inc c
+198+  87E8 18 E8            jr count_down
+199+  87EA
+200+  87EA              check_vertical_result:
+201+  87EA 78               ld a, b
+202+  87EB FE 04            cp winsize
+203+  87ED 30 03            jr nc, has_vertical_win
+204+  87EF AF               xor a           ; no win
+205+  87F0 18 02            jr vertical_exit
+206+  87F2
+207+  87F2              has_vertical_win:
+208+  87F2 3E 01            ld a, 1     ; win
+209+  87F4
+210+  87F4              vertical_exit:
+211+  87F4 E1               pop hl
+212+  87F5 D1               pop de
+213+  87F6 C1               pop bc
+214+  87F7 C9               ret
+215+  87F8
+216+  87F8
+217+  87F8              ; ============================================
+218+  87F8              ; checkSemiDiagonal
+219+  87F8              ; output: a = number of consecutive pieces on the diagonal
+220+  87F8              checkSemiDiagonal:
+221+  87F8 C5               push bc
+222+  87F9 D5               push de
+223+  87FA E5               push hl
+224+  87FB
+225+  87FB 32 18 87         ld (temp_player), a
+226+  87FE 78               ld a, b
+227+  87FF 32 1B 87         ld (temp_dx), a
+228+  8802 79               ld a, c
+229+  8803 32 1C 87         ld (temp_dy), a
+230+  8806
+231+  8806 06 00            ld b, 0                 ; consecutiveCheckers = 0
+232+  8808 3E 01            ld a, 1
+233+  880A 32 1F 87         ld (keeps_iterating), a
+234+  880D
+235+  880D              semi_diag_loop:
+236+  880D 3A 1F 87         ld a, (keeps_iterating)
+237+  8810 FE 00            cp 0
+238+  8812 28 2F            jr z, semi_diag_end
+239+  8814
+240+  8814                  ; yDropPosition += DY
+241+  8814 3A 1C 87         ld a, (temp_dy)
+242+  8817 83               add a, e
+243+  8818 5F               ld e, a
+244+  8819
+245+  8819                  ; xDropPosition += DX
+246+  8819 3A 1B 87         ld a, (temp_dx)
+247+  881C 82               add a, d
+248+  881D 57               ld d, a
+249+  881E
+250+  881E                  ; check yDropPosition >= 0
+251+  881E 7B               ld a, e
+252+  881F CB 7F            bit 7, a
+253+  8821 20 1A            jr nz, set_false
+254+  8823
+255+  8823                  ; check yDropPosition < YSIZE
+256+  8823 FE 06            cp ysize
+257+  8825 30 16            jr nc, set_false
+258+  8827
+259+  8827                  ; Check xDropPosition >= 0
+260+  8827 7A               ld a, d
+261+  8828 CB 7F            bit 7, a
+262+  882A 20 11            jr nz, set_false
+263+  882C
+264+  882C                  ; Check xDropPosition < XSIZE
+265+  882C FE 07            cp xsize
+266+  882E 30 0D            jr nc, set_false
+267+  8830
+268+  8830                  ; Check slot
+269+  8830 CD 36 86         call SlotPointer
+270+  8833 7E               ld a, (hl)
+271+  8834 21 18 87         ld hl, temp_player
+272+  8837 BE               cp (hl)
+273+  8838 20 03            jr nz, set_false
+274+  883A
+275+  883A 04               inc b       ; valid condecutive piece
+276+  883B 18 D0            jr semi_diag_loop
+277+  883D
+278+  883D              set_false:
+279+  883D AF               xor a
+280+  883E 32 1F 87         ld (keeps_iterating), a
+281+  8841 18 CA            jr semi_diag_loop
+282+  8843
+283+  8843              semi_diag_end:
+284+  8843 78               ld a, b         ; return count
+285+  8844
+286+  8844 E1               pop hl
+287+  8845 D1               pop de
+288+  8846 C1               pop bc
+289+  8847 C9               ret
+290+  8848
+291+  8848
+292+  8848              ; ============================================
+293+  8848              ; checkDiagonal
+294+  8848              ; checks diagonal from left (up) to right (down) (DX=1, DY=1)
+295+  8848              checkDiagonal:
+296+  8848 C5               push bc
+297+  8849 D5               push de
+298+  884A E5               push hl
+299+  884B
+300+  884B                  ;save parameters
+301+  884B 32 18 87         ld (temp_player), a
+302+  884E 7A               ld a, d
+303+  884F 32 22 87         ld (save_x), a
+304+  8852 7B               ld a, e
+305+  8853 32 23 87         ld (save_y), a
+306+  8856 78               ld a, b
+307+  8857 32 1B 87         ld (temp_dx), a
+308+  885A 79               ld a, c
+309+  885B 32 1C 87         ld (temp_dy), a
+310+  885E
+311+  885E                  ; Direction 1: DX, DY
+312+  885E 3A 18 87         ld a, (temp_player)
+313+  8861 CD F8 87         call checkSemiDiagonal
+314+  8864 32 20 87         ld (sd1n), a
+315+  8867
+316+  8867                  ; Restore coordinates
+317+  8867 3A 22 87         ld a, (save_x)
+318+  886A 57               ld d, a
+319+  886B 3A 23 87         ld a, (save_y)
+320+  886E 5F               ld e, a
+321+  886F
+322+  886F                  ; Direction 2: -DX, -DY
+323+  886F 3A 1B 87         ld a, (temp_dx)
+324+  8872 ED 44            neg
+325+  8874 47               ld b, a
+326+  8875 3A 1C 87         ld a, (temp_dy)
+327+  8878 ED 44            neg
+328+  887A 4F               ld c, a
+329+  887B
+330+  887B 3A 18 87         ld a, (temp_player)
+331+  887E CD F8 87         call checkSemiDiagonal
+332+  8881 32 21 87         ld (sd2n), a
+333+  8884
+334+  8884                  ; return SD1N + SD2N + 1
+335+  8884 3A 20 87         ld a, (sd1n)
+336+  8887 21 21 87         ld hl, sd2n
+337+  888A 86               add a, (hl)
+338+  888B 3C               inc a
+339+  888C
+340+  888C E1               pop hl
+341+  888D D1               pop de
+342+  888E C1               pop bc
+343+  888F C9               ret
+344+  8890
+345+  8890
+346+  8890              ; ============================================
+347+  8890              ; checkDiagonal2
+348+  8890              ; checks diagonal from right (up) to left (down) (DX=1, DY=-1)
+349+  8890              checkDiagonal2:
+350+  8890 C5               push bc
+351+  8891 D5               push de
+352+  8892 E5               push hl
+353+  8893
+354+  8893                  ; save parameters
+355+  8893 32 18 87         ld (temp_player), a
+356+  8896 7A               ld a, d
+357+  8897 32 19 87         ld (temp_col), a
+358+  889A 7B               ld a, e
+359+  889B 32 1A 87         ld (temp_row), a
+360+  889E
+361+  889E                  ; Direction 1: DX=1, DY=-1
+362+  889E 06 01            ld b, 1
+363+  88A0 0E FF            ld c, 255
+364+  88A2 3A 18 87         ld a, (temp_player)
+365+  88A5 CD F8 87         call checkSemiDiagonal
+366+  88A8 32 1D 87         ld (temp_sd1n), a
+367+  88AB
+368+  88AB                  ; Restore coordinates
+369+  88AB 3A 19 87         ld a, (temp_col)
+370+  88AE 57               ld d, a
+371+  88AF 3A 1A 87         ld a, (temp_row)
+372+  88B2 5F               ld e, a
+373+  88B3
+374+  88B3                  ; Direction 2: DX=-1, DY=1
+375+  88B3 06 FF            ld b, 255
+376+  88B5 0E 01            ld c, 1
+377+  88B7 3A 18 87         ld a, (temp_player)
+378+  88BA CD F8 87         call checkSemiDiagonal
+379+  88BD 32 1E 87         ld (temp_sd2n), a
+380+  88C0
+381+  88C0                  ; return SD1N + SD2N + 1
+382+  88C0 3A 1D 87         ld a, (temp_sd1n)
+383+  88C3 21 1E 87         ld hl, temp_sd2n
+384+  88C6 86               add a, (hl)
+385+  88C7 3C               inc a
+386+  88C8
+387+  88C8 E1               pop hl
+388+  88C9 D1               pop de
+389+  88CA C1               pop bc
+390+  88CB C9               ret
+391+  88CC
+392+  88CC
+393+  88CC              ; ============================================
+394+  88CC              ; checkWin
+395+  88CC              ; uses checkHorizontal, checkVertical, checkDiagonal and checkDiagonal2 to check if there is any win condition satisfied.
+396+  88CC              ; Output: a = 1 if there is a win
+397+  88CC              checkWin:
+398+  88CC C5               push bc
+399+  88CD D5               push de
+400+  88CE E5               push hl
+401+  88CF
+402+  88CF                  ; save parameters
+403+  88CF 32 18 87         ld (temp_player), a
+404+  88D2 7A               ld a, d
+405+  88D3 32 19 87         ld (temp_col), a
+406+  88D6 7B               ld a, e
+407+  88D7 32 1A 87         ld (temp_row), a
+408+  88DA
+409+  88DA                  ; check HORIZONTAL
+410+  88DA 3A 19 87         ld a, (temp_col)
+411+  88DD 57               ld d, a
+412+  88DE 3A 1A 87         ld a, (temp_row)
+413+  88E1 5F               ld e, a
+414+  88E2 3A 18 87         ld a, (temp_player)
+415+  88E5 CD 46 87         call checkHorizontal
+416+  88E8 FE 01            cp 1
+417+  88EA 28 3D            jr z, win_found
+418+  88EC
+419+  88EC                  ; check VERTICAL
+420+  88EC 3A 19 87         ld a, (temp_col)
+421+  88EF 57               ld d, a
+422+  88F0 3A 1A 87         ld a, (temp_row)
+423+  88F3 5F               ld e, a
+424+  88F4 3A 18 87         ld a, (temp_player)
+425+  88F7 CD 9F 87         call checkVertical
+426+  88FA FE 01            cp 1
+427+  88FC 28 2B            jr z, win_found
+428+  88FE
+429+  88FE                  ; check DIAGONAL 1 (DX=1, DY=1)
+430+  88FE 3A 19 87         ld a, (temp_col)
+431+  8901 57               ld d, a
+432+  8902 3A 1A 87         ld a, (temp_row)
+433+  8905 5F               ld e, a
+434+  8906 06 01            ld b, 1
+435+  8908 0E 01            ld c, 1
+436+  890A 3A 18 87         ld a, (temp_player)
+437+  890D CD 48 88         call checkDiagonal
+438+  8910 FE 04            cp winsize
+439+  8912 30 15            jr nc, win_found
+440+  8914
+441+  8914                  ; check DIAGONAL 2 (DX=1, DY=-1)
+442+  8914 3A 19 87         ld a, (temp_col)
+443+  8917 57               ld d, a
+444+  8918 3A 1A 87         ld a, (temp_row)
+445+  891B 5F               ld e, a
+446+  891C 3A 18 87         ld a, (temp_player)
+447+  891F CD 90 88         call checkDiagonal2
+448+  8922 FE 04            cp winsize
+449+  8924 30 03            jr nc, win_found
+450+  8926
+451+  8926                  ; No win
+452+  8926 AF               xor a
+453+  8927 18 02            jr win_exit
+454+  8929
+455+  8929              win_found:
+456+  8929 3E 01            ld a, 1 ; win
+457+  892B
+458+  892B              win_exit:
+459+  892B E1               pop hl
+460+  892C D1               pop de
+461+  892D C1               pop bc
+462+  892E C9               ret
+# file closed: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\logic_checks.asm
+ 39   892F
+# file closed: C:\Users\lucof\OneDrive - UFV\UNIVERSIDAD\Arquitectura y Organizacion de Computadores\AOC_MainFolder\Connect4_NataliaLucasErik\main.asm
